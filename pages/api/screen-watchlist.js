@@ -2,7 +2,7 @@
 // Alpaca indicative feed — IV rank gate removed, greeks-based filtering
 
 import {
-  computeHV, computeExpectedMove, computeIVRVRatio,
+  computeExpectedMove, computeIVRVRatio,
   constructBullPutSpreads, runAllGates,
   scoreLiquidity, scoreSpreadEconomics, scoreStrikeSafety, scoreVolatilityEdge,
   computeTotalScore,
