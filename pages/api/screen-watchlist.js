@@ -113,8 +113,14 @@ async function screenSymbol(ticker, config) {
       }
     }).filter(Boolean).filter(p => p.strike < stockPrice && p.bid > 0 && p.dte >= (config.minDTE ?? 2))
 
-    if (puts.length === 0) return { symbol: ticker, error: `No valid puts — chain had ${Object.keys(snapshots).length} contracts`, stockPrice, passingCandidates: 0, results: [] }
-
+    const totalContracts = Object.keys(snapshots).length
+const withBid = puts.filter(p => p.bid > 0).length
+const belowSpot = puts.filter(p => p.strike < stockPrice).length
+if (puts.length === 0) return { 
+  symbol: ticker, 
+  error: `No valid puts — total:${totalContracts} belowSpot:${belowSpot} withBid:${withBid}`, 
+  stockPrice, passingCandidates: 0, results: [] 
+}
     const atmPut = puts.reduce((best, p) =>
       Math.abs(p.strike - stockPrice) < Math.abs((best?.strike ?? 0) - stockPrice) ? p : best
     , puts[0])
