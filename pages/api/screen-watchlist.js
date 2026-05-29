@@ -1,12 +1,11 @@
-// pages/api/screen-watchlist.js
-import { getStockSnapshot, getDailyBars, getOptionsChain } from '../../lib/polygon'
-import {
-  computeHV, computeExpectedMove, computeIVRank, computeIVRVRatio,
-  constructBullPutSpreads, runAllGates,
-  scoreLiquidity, scoreSpreadEconomics, scoreStrikeSafety, scoreVolatilityEdge,
-  computeTotalScore,
-} from '../../lib/scoring'
-
+// Latest stock price — uses previous close which is free tier compatible
+export async function getStockSnapshot(symbol) {
+  const res = await fetch(
+    `${BASE}/v2/aggs/ticker/${symbol}/prev?adjusted=true&apiKey=${key()}`
+  )
+  if (!res.ok) throw new Error(`Stock snapshot failed for ${symbol}: ${res.status}`)
+  return res.json()
+}
 function getDTE(expiryStr) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
