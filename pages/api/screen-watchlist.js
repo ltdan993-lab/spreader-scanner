@@ -113,7 +113,7 @@ async function screenSymbol(ticker, config) {
       }
     }).filter(Boolean).filter(p => p.strike < stockPrice && p.bid > 0 && p.dte >= (config.minDTE ?? 2))
 
-    if (puts.length === 0) return { symbol: ticker, error: 'No valid puts', stockPrice, passingCandidates: 0, results: [] }
+    if (puts.length === 0) return { symbol: ticker, error: `No valid puts — chain had ${Object.keys(snapshots).length} contracts`, stockPrice, passingCandidates: 0, results: [] }
 
     const atmPut = puts.reduce((best, p) =>
       Math.abs(p.strike - stockPrice) < Math.abs((best?.strike ?? 0) - stockPrice) ? p : best
@@ -152,7 +152,8 @@ async function screenSymbol(ticker, config) {
     const failing = scored.filter(s => !s.allPass).sort((a, b) => b.scores.total - a.scores.total)
 
     return {
-      symbol: ticker, stockPrice, ivRank: null,
+  symbol: ticker, stockPrice, ivRank: null,
+  debug: { putsFound: puts.length, spreadsConstructed: rawSpreads.length, passing: passing.length },
       ivRVRatio: ivRVRatio ? parseFloat(ivRVRatio.toFixed(2)) : null,
       passingCandidates: passing.length,
       results: [...passing, ...failing].slice(0, 10),
