@@ -146,11 +146,13 @@ export default async function handler(req, res) {
   const { symbols = [], config = {} } = req.body
   if (!symbols.length) return res.status(400).json({ error: 'symbols array required' })
 
-  const limited = symbols.slice(0, 10)
-  const screenResults = await Promise.allSettled(
-    limited.map(symbol => screenSymbol(symbol.toUpperCase().trim(), config))
-  )
-
+  const limited = symbols.slice(0, 5)
+const screenResults = []
+for (const symbol of limited) {
+  const result = await screenSymbol(symbol.toUpperCase().trim(), config)
+  screenResults.push({ status: 'fulfilled', value: result })
+  await new Promise(r => setTimeout(r, 500))
+}
   const results = screenResults
     .map((r, i) => r.status === 'fulfilled' ? r.value : { symbol: limited[i], error: 'failed', passingCandidates: 0, results: [] })
 
