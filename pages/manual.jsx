@@ -142,7 +142,8 @@ const emptyRow = () => ({
   strike: '', bid: '', ask: '', delta: '',
   gamma: '', theta: '', vega: '', iv: '',
   oi: '', volume: '', dte: '', expiry: '',
-})export default function ManualScreener() {
+})
+  export default function ManualScreener() {
   const [stock, setStock] = useState({
     ticker: '', price: '', expectedMove: '', hv20: '', ivRank: '',
   })
