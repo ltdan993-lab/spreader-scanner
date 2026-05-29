@@ -159,6 +159,7 @@ if (puts.length === 0) return {
 
     return {
   symbol: ticker, stockPrice, ivRank: null,
+  debug: `puts:${puts.length} spreads:${rawSpreads.length} passing:${passing.length} failing:${failing.length}`,
   debug: { putsFound: puts.length, spreadsConstructed: rawSpreads.length, passing: passing.length },
       ivRVRatio: ivRVRatio ? parseFloat(ivRVRatio.toFixed(2)) : null,
       passingCandidates: passing.length,
