@@ -40,10 +40,9 @@ async function getDailyBars(symbol) {
 
 async function getOptionsChain(symbol, expGte, expLte) {
   const qs = new URLSearchParams({
-    underlying_symbols: symbol,
-    type: 'put',
     expiration_date_gte: expGte,
     expiration_date_lte: expLte,
+    type: 'put',
     limit: 200,
     feed: 'indicative',
   }).toString()
@@ -54,7 +53,6 @@ async function getOptionsChain(symbol, expGte, expLte) {
   if (!res.ok) throw new Error(`Options chain failed for ${symbol}: ${res.status}`)
   return res.json()
 }
-
 function getDTE(expiryStr) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
