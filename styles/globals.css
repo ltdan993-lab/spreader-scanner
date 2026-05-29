@@ -1,0 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #0a0a0f;
+  color: #e5e7eb;
+}
+
+@layer components {
+  .gate-pass {
+    @apply text-xs font-mono px-2 py-0.5 rounded bg-green-950 text-green-400 border border-green-900;
+  }
+  .gate-fail {
+    @apply text-xs font-mono px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-900;
+  }
+  .gate-warn {
+    @apply text-xs font-mono px-2 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-900;
+  }
+  .stat-card {
+    @apply bg-surface-2 border border-surface-4 rounded-lg p-4;
+  }
+  .input-field {
+    @apply bg-surface-2 border border-surface-4 rounded px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:border-blue-600 w-full;
+  }
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors;
+  }
+  .btn-ghost {
+    @apply bg-transparent hover:bg-surface-3 text-gray-400 hover:text-gray-200 text-sm px-3 py-1.5 rounded border border-surface-4 transition-colors;
+  }
+}
