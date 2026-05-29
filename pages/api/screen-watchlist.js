@@ -30,7 +30,7 @@ async function screenSymbol(ticker, config) {
   try {
     // ── 1. Stock price ─────────────────────────────────────────────────────
     const snapData = await getStockSnapshot(ticker)
-    const stockPrice = snapData?.ticker?.day?.c
+    const stockPrice = snapData?.results?.[0]?.c ?? null
       ?? snapData?.ticker?.lastTrade?.p
       ?? snapData?.ticker?.prevDay?.c
       ?? null
