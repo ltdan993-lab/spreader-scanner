@@ -1,23 +1,59 @@
-// Latest stock price — uses previous close which is free tier compatible
-export async function getStockSnapshot(symbol) {
+// pages/api/screen-watchlist.js
+import {
+  computeHV, computeExpectedMove, computeIVRank, computeIVRVRatio,
+  constructBullPutSpreads, runAllGates,
+  scoreLiquidity, scoreSpreadEconomics, scoreStrikeSafety, scoreVolatilityEdge,
+  computeTotalScore,
+} from '../../lib/scoring'
+
+const POLYGON_BASE = 'https://api.polygon.io'
+function polygonKey() { return process.env.POLYGON_API_KEY }
+
+async function getStockPrice(symbol) {
   const res = await fetch(
-    `${BASE}/v2/aggs/ticker/${symbol}/prev?adjusted=true&apiKey=${key()}`
+    `${POLYGON_BASE}/v2/aggs/ticker/${symbol}/prev?adjusted=true&apiKey=${polygonKey()}`
   )
-  if (!res.ok) throw new Error(`Stock snapshot failed for ${symbol}: ${res.status}`)
-  return res.json()
+  if (!res.ok) throw new Error(`Stock price failed for ${symbol}: ${res.status}`)
+  const data = await res.json()
+  return data?.results?.[0]?.c ?? null
 }
+
+async function getDailyBars(symbol) {
+  const end = new Date().toISOString().split('T')[0]
+  const start = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const res = await fetch(
+    `${POLYGON_BASE}/v2/aggs/ticker/${symbol}/range/1/day/${start}/${end}?adjusted=true&sort=asc&limit=60&apiKey=${polygonKey()}`
+  )
+  if (!res.ok) throw new Error(`Bars failed for ${symbol}: ${res.status}`)
+  const data = await res.json()
+  return (data?.results ?? []).map(b => b.c)
+}
+
+async function getOptionsChain(symbol, expGte, expLte, strikeLte) {
+  const qs = new URLSearchParams({
+    limit: 250,
+    contract_type: 'put',
+    apiKey: polygonKey(),
+    'expiration_date.gte': expGte,
+    'expiration_date.lte': expLte,
+    'strike_price.lte': strikeLte,
+  }).toString()
+  const res = await fetch(`${POLYGON_BASE}/v3/snapshot/options/${symbol}?${qs}`)
+  if (!res.ok) throw new Error(`Options chain failed for ${symbol}: ${res.status}`)
+  const data = await res.json()
+  return data?.results ?? []
+}
+
 function getDTE(expiryStr) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const expiry = new Date(expiryStr + 'T00:00:00')
-  return Math.ceil((expiry - today) / (1000 * 60 * 60 * 24))
+  return Math.ceil((new Date(expiryStr + 'T00:00:00') - today) / (1000 * 60 * 60 * 24))
 }
 
 function getWeeklyExpiries(n = 3) {
   const expiries = []
   const today = new Date()
-  const day = today.getDay()
-  const daysUntilFriday = (5 - day + 7) % 7 || 7
+  const daysUntilFriday = (5 - today.getDay() + 7) % 7 || 7
   for (let i = 0; i < n; i++) {
     const d = new Date(today)
     d.setDate(today.getDate() + daysUntilFriday + i * 7)
@@ -28,65 +64,39 @@ function getWeeklyExpiries(n = 3) {
 
 async function screenSymbol(ticker, config) {
   try {
-    // ── 1. Stock price ─────────────────────────────────────────────────────
-    const snapData = await getStockSnapshot(ticker)
-    const stockPrice = snapData?.results?.[0]?.c ?? null
-      ?? snapData?.ticker?.lastTrade?.p
-      ?? snapData?.ticker?.prevDay?.c
-      ?? null
+    const stockPrice = await getStockPrice(ticker)
     if (!stockPrice) return { symbol: ticker, error: 'No stock price', passingCandidates: 0, results: [] }
 
-    // ── 2. Historical bars for HV ──────────────────────────────────────────
-    const barsData = await getDailyBars(ticker, 60)
-    const closes = (barsData?.results ?? []).map(b => b.c)
+    const closes = await getDailyBars(ticker)
     const hv20 = computeHV(closes, 20)
 
-    // ── 3. Options chain ───────────────────────────────────────────────────
     const expiries = getWeeklyExpiries(3)
-    const chainData = await getOptionsChain(ticker, {
-      expiration_date_gte: expiries[0],
-      expiration_date_lte: expiries[expiries.length - 1],
-      strike_lte: stockPrice * 1.05,
-    })
+    const contracts = await getOptionsChain(ticker, expiries[0], expiries[expiries.length - 1], stockPrice * 1.05)
 
-    const contracts = chainData?.results ?? []
-    if (contracts.length === 0) {
-      return { symbol: ticker, error: 'No options contracts found', stockPrice, passingCandidates: 0, results: [] }
-    }
-
-    // ── 4. Parse into normalized format ───────────────────────────────────
     const puts = contracts
       .filter(c => c.details?.contract_type === 'put' && c.details?.strike_price < stockPrice)
-      .map(c => {
-        const bid = c.last_quote?.bid ?? 0
-        const ask = c.last_quote?.ask ?? 0
-        const iv = c.implied_volatility ? c.implied_volatility * 100 : null
-        return {
-          symbol: ticker,
-          optSymbol: c.details?.ticker ?? '',
-          expiry: c.details?.expiration_date ?? '',
-          strike: c.details?.strike_price ?? 0,
-          bid,
-          ask,
-          oi: c.open_interest ?? 0,
-          volume: c.day?.volume ?? 0,
-          iv,
-          greeks: {
-            delta: c.greeks?.delta ?? null,
-            gamma: c.greeks?.gamma ?? null,
-            theta: c.greeks?.theta ?? null,
-            vega: c.greeks?.vega ?? null,
-          },
-          dte: getDTE(c.details?.expiration_date ?? ''),
-        }
-      })
+      .map(c => ({
+        symbol: ticker,
+        optSymbol: c.details?.ticker ?? '',
+        expiry: c.details?.expiration_date ?? '',
+        strike: c.details?.strike_price ?? 0,
+        bid: c.last_quote?.bid ?? 0,
+        ask: c.last_quote?.ask ?? 0,
+        oi: c.open_interest ?? 0,
+        volume: c.day?.volume ?? 0,
+        iv: c.implied_volatility ? c.implied_volatility * 100 : null,
+        greeks: {
+          delta: c.greeks?.delta ?? null,
+          gamma: c.greeks?.gamma ?? null,
+          theta: c.greeks?.theta ?? null,
+          vega: c.greeks?.vega ?? null,
+        },
+        dte: getDTE(c.details?.expiration_date ?? ''),
+      }))
       .filter(p => p.bid > 0 && p.dte >= (config.minDTE ?? 2))
 
-    if (puts.length === 0) {
-      return { symbol: ticker, error: 'No valid puts after filter', stockPrice, passingCandidates: 0, results: [] }
-    }
+    if (puts.length === 0) return { symbol: ticker, error: 'No valid puts', stockPrice, passingCandidates: 0, results: [] }
 
-    // ── 5. IV rank + ratios ────────────────────────────────────────────────
     const allIVs = puts.map(p => p.iv).filter(Boolean)
     const atmPut = puts.reduce((best, p) =>
       Math.abs(p.strike - stockPrice) < Math.abs((best?.strike ?? 0) - stockPrice) ? p : best
@@ -96,7 +106,6 @@ async function screenSymbol(ticker, config) {
     const ivRVRatio = currentIV && hv20 ? computeIVRVRatio(currentIV, hv20) : null
     const expectedMove = currentIV ? computeExpectedMove(stockPrice, currentIV, config.targetDTE ?? 3) : null
 
-    // ── 6. Construct + score spreads ───────────────────────────────────────
     const rawSpreads = constructBullPutSpreads(puts, stockPrice, expectedMove ?? 0, {
       minDelta: config.minDelta ?? 0.10,
       maxDelta: config.maxDelta ?? 0.20,
