@@ -192,14 +192,15 @@ export default async function handler(req, res) {
   return res.status(200).json({
     screened: results.length,
     totalPassingCandidates: allSpreads.length,
-    symbols: results.map(r => ({
-      symbol: r.symbol,
-      stockPrice: r.stockPrice ?? null,
-      ivRank: null,
-      ivRVRatio: r.ivRVRatio ?? null,
-      passingCandidates: r.passingCandidates ?? 0,
-      error: r.error ?? null,
-    })),
+   symbols: results.map(r => ({
+  symbol: r.symbol,
+  stockPrice: r.stockPrice ?? null,
+  ivRank: null,
+  ivRVRatio: r.ivRVRatio ?? null,
+  passingCandidates: r.passingCandidates ?? 0,
+  error: r.error ?? null,
+  debug: r.debug ?? null,
+})),
     spreads: allSpreads.slice(0, 20),
   })
 }
