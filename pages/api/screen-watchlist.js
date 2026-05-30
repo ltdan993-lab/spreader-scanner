@@ -49,13 +49,6 @@ async function getOptionsChain(symbol, expGte, expLte, strikeLte) {
   return data?.results ?? []
 }
 
-// Get historical IV for IV rank — use past 52 weeks of ATM IV approximated from daily bars
-async function getIVHistory(symbol) {
-  // Use Polygon's options chain snapshots across multiple expiries to approximate IV history
-  // For now we use the spread of IVs across current chain as a proxy
-  return null
-}
-
 function getDTE(expiryStr) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -76,15 +69,12 @@ function getWeeklyExpiries(n = 3) {
 
 async function screenSymbol(ticker, config) {
   try {
-    // 1. Stock price
     const stockPrice = await getStockSnapshot(ticker)
     if (!stockPrice) return { symbol: ticker, error: 'No stock price', passingCandidates: 0, results: [] }
 
-    // 2. Historical closes for HV
     const closes = await getDailyBars(ticker)
     const hv20 = computeHV(closes, 20)
 
-    // 3. Options chain
     const expiries = getWeeklyExpiries(3)
     const contracts = await getOptionsChain(
       ticker,
@@ -97,21 +87,22 @@ async function screenSymbol(ticker, config) {
       return { symbol: ticker, error: 'No options contracts returned', stockPrice, passingCandidates: 0, results: [] }
     }
 
-    // 4. Parse contracts
     const puts = contracts
       .filter(c => {
         const strike = c.details?.strike_price ?? 0
         const bid = c.last_quote?.bid ?? 0
+        const lastPrice = c.last_trade?.price ?? 0
         const dte = getDTE(c.details?.expiration_date ?? '')
-        return strike < stockPrice && bid > 0 && dte >= (config.minDTE ?? 2)
+        const hasPrice = bid > 0 || lastPrice > 0
+        return strike < stockPrice && hasPrice && dte >= (config.minDTE ?? 2)
       })
       .map(c => ({
         symbol: ticker,
         optSymbol: c.details?.ticker ?? '',
         expiry: c.details?.expiration_date ?? '',
         strike: c.details?.strike_price ?? 0,
-        bid: c.last_quote?.bid ?? 0,
-        ask: c.last_quote?.ask ?? 0,
+        bid: c.last_quote?.bid > 0 ? c.last_quote.bid : (c.last_trade?.price ?? 0),
+        ask: c.last_quote?.ask > 0 ? c.last_quote.ask : (c.last_trade?.price ?? 0),
         oi: c.open_interest ?? 0,
         volume: c.day?.volume ?? 0,
         iv: c.implied_volatility ? parseFloat((c.implied_volatility * 100).toFixed(2)) : null,
@@ -128,7 +119,6 @@ async function screenSymbol(ticker, config) {
       return { symbol: ticker, error: 'No valid puts after filter', stockPrice, passingCandidates: 0, results: [] }
     }
 
-    // 5. IV calculations
     const allIVs = puts.map(p => p.iv).filter(Boolean)
     const atmPut = puts.reduce((best, p) =>
       Math.abs(p.strike - stockPrice) < Math.abs((best?.strike ?? 0) - stockPrice) ? p : best
@@ -140,7 +130,6 @@ async function screenSymbol(ticker, config) {
       ? computeExpectedMove(stockPrice, currentIV, config.targetDTE ?? 3)
       : stockPrice * 0.02
 
-    // 6. Build spreads
     const rawSpreads = constructBullPutSpreads(puts, stockPrice, expectedMove, {
       minDelta: config.minDelta ?? 0.10,
       maxDelta: config.maxDelta ?? 0.20,
@@ -148,7 +137,6 @@ async function screenSymbol(ticker, config) {
       maxWidth: 5,
     })
 
-    // 7. Gate + score
     const scored = rawSpreads.map(spread => {
       const { gates, allPass } = runAllGates(spread, stockPrice, ivRank, config)
       const liq = scoreLiquidity(spread)
@@ -185,7 +173,6 @@ export default async function handler(req, res) {
   const { symbols = [], config = {} } = req.body
   if (!symbols.length) return res.status(400).json({ error: 'symbols array required' })
 
-  // Sequential with small delay to respect rate limits
   const limited = symbols.slice(0, 8)
   const results = []
   for (const symbol of limited) {
