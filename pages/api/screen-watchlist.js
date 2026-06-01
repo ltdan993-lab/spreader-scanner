@@ -176,19 +176,19 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   const { symbols = [], config = {} } = req.body
   if (!symbols.length) return res.status(400).json({ error: 'symbols array required' })
-
-  const limited = symbols.slice(0, 8)
-  const results = []
-  for (const symbol of limited) {
-    const result = await screenSymbol(symbol.toUpperCase().trim(), config)
-    results.push(result)
-    await new Promise(r => setTimeout(r, 250))
-  }
-
-  const allSpreads = results
-    .flatMap(r => (r.results ?? []).filter(s => s.allPass))
-    .sort((a, b) => b.scores.total - a.scores.total)
-
+export function runAllGates(spread, stockPrice, ivRank, config = {}) {
+  const gates = [
+    gateDTE(spread.dte, config.minDTE ?? 2, config.maxDTE ?? 4),
+    gateMinPrice(stockPrice, config.minPrice ?? 20),
+    gateBidAskWidth(spread.shortBidAskPct, config.maxBidAsk ?? 0.10),
+    gateLiquidity(spread.shortOI, spread.shortVol, config.minOI ?? 1000, config.minVol ?? 250),
+    gateCreditWidth(spread.creditWidthRatio, config.minCreditWidth ?? 0.18),
+    gateExpectedMoveBuffer(spread.distToShort, spread.distToShort / (spread.emRatio || 1), config.minEMBuffer ?? 1.0),
+  ]
+  const allPass = gates.every(g => g.pass)
+  return { gates, allPass }
+}
+  
   return res.status(200).json({
     screened: results.length,
     totalPassingCandidates: allSpreads.length,
