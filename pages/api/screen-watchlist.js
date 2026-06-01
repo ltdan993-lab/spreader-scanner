@@ -83,9 +83,16 @@ async function screenSymbol(ticker, config) {
       stockPrice * 1.02
     )
 
-    if (contracts.length === 0) {
-      return { symbol: ticker, error: 'No options contracts returned', stockPrice, passingCandidates: 0, results: [] }
-    }
+   if (contracts.length === 0) {
+  return { symbol: ticker, error: 'No options contracts returned', stockPrice, passingCandidates: 0, results: [] }
+}
+
+// Debug: return first contract raw to see field structure
+return {
+  symbol: ticker, stockPrice, passingCandidates: 0, results: [],
+  debug: contracts[0],
+  contractCount: contracts.length,
+}
 
     const puts = contracts
       .filter(c => {
