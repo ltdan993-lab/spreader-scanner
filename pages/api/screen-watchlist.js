@@ -89,7 +89,7 @@ async function screenSymbol(ticker, config) {
     const puts = contracts
       .filter(c => {
         const strike = c.details?.strike_price ?? 0
-        const price = c.day?.close ?? c.day?.vwap ?? 0
+        const price = (c.day?.close > 0 ? c.day.close : null) ?? (c.day?.vwap > 0 ? c.day.vwap : null) ?? 0
         const dte = getDTE(c.details?.expiration_date ?? '')
         return strike < stockPrice && price > 0 && dte >= (config.minDTE ?? 2)
       })
@@ -139,7 +139,7 @@ async function screenSymbol(ticker, config) {
       maxWidth: 5,
     })
 
-    const relaxedConfig = { ...config, maxBidAsk: 999 }
+    const relaxedConfig = { ...config, maxBidAsk: 999, minIVRank: 0 }
 
     const scored = rawSpreads.map(spread => {
       const { gates, allPass } = runAllGates(spread, stockPrice, ivRank, relaxedConfig)
