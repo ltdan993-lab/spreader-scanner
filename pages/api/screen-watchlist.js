@@ -154,7 +154,19 @@ async function screenSymbol(ticker, config) {
         meta: { stockPrice, ivRank, ivRVRatio, hv20, currentIV, expectedMove },
       }
     })
-
+// Debug: log first spread's gate results
+if (scored.length > 0) {
+  console.log(`${ticker} first spread gates:`, JSON.stringify(scored[0].gates))
+  console.log(`${ticker} first spread:`, JSON.stringify({
+    dte: scored[0].dte,
+    credit: scored[0].credit,
+    creditWidthRatio: scored[0].creditWidthRatio,
+    emRatio: scored[0].emRatio,
+    shortOI: scored[0].shortOI,
+    shortVol: scored[0].shortVol,
+    shortBidAskPct: scored[0].shortBidAskPct,
+  }))
+}
     const passing = scored.filter(s => s.allPass).sort((a, b) => b.scores.total - a.scores.total)
     const failing = scored.filter(s => !s.allPass).sort((a, b) => b.scores.total - a.scores.total)
 
