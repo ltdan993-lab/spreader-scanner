@@ -1,4 +1,6 @@
 // pages/api/screen-watchlist.js
+// Polygon.io Starter tier — full options chain with greeks and IV
+
 import {
   computeHV, computeExpectedMove, computeIVRank, computeIVRVRatio,
   constructBullPutSpreads, runAllGates,
@@ -85,7 +87,6 @@ async function screenSymbol(ticker, config) {
       return { symbol: ticker, error: 'No options contracts returned', stockPrice, passingCandidates: 0, results: [] }
     }
 
-    // Use day.close as price proxy since Options Basic doesn't include live quotes
     const puts = contracts
       .filter(c => {
         const strike = c.details?.strike_price ?? 0
@@ -94,8 +95,7 @@ async function screenSymbol(ticker, config) {
         return strike < stockPrice && price > 0 && dte >= (config.minDTE ?? 2)
       })
       .map(c => {
-        const price = c.day?.close ?? c.day?.vwap ?? 0
-        // IV from Polygon is already in decimal form (0.25 = 25%)
+        const price = (c.day?.close > 0 ? c.day.close : null) ?? (c.day?.vwap > 0 ? c.day.vwap : null) ?? 0
         const iv = c.implied_volatility ? parseFloat((c.implied_volatility * 100).toFixed(2)) : null
         return {
           symbol: ticker,
@@ -170,4 +170,38 @@ async function screenSymbol(ticker, config) {
     console.error(`screenSymbol error for ${ticker}:`, err.message)
     return { symbol: ticker, error: err.message, passingCandidates: 0, results: [] }
   }
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const { symbols = [], config = {} } = req.body
+  if (!symbols.length) return res.status(400).json({ error: 'symbols array required' })
+
+  const limited = symbols.slice(0, 8)
+  const results = []
+  for (const symbol of limited) {
+    const result = await screenSymbol(symbol.toUpperCase().trim(), config)
+    results.push(result)
+    await new Promise(r => setTimeout(r, 250))
+  }
+
+  const allSpreads = results
+    .flatMap(r => (r.results ?? []).filter(s => s.allPass))
+    .sort((a, b) => b.scores.total - a.scores.total)
+
+  return res.status(200).json({
+    screened: results.length,
+    totalPassingCandidates: allSpreads.length,
+    symbols: results.map(r => ({
+      symbol: r.symbol,
+      stockPrice: r.stockPrice ?? null,
+      ivRank: r.ivRank ?? null,
+      ivRVRatio: r.ivRVRatio ?? null,
+      hv20: r.hv20 ?? null,
+      currentIV: r.currentIV ?? null,
+      passingCandidates: r.passingCandidates ?? 0,
+      error: r.error ?? null,
+    })),
+    spreads: allSpreads.slice(0, 20),
+  })
 }
