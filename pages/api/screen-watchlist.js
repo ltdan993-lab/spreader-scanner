@@ -102,7 +102,106 @@ async function screenSymbol(ticker, config) {
           optSymbol: c.details?.ticker ?? '',
           expiry: c.details?.expiration_date ?? '',
           strike: c.details?.strike_price ?? 0,
-          bid: price * 0.95,  // estimate bid as 95% of last price
-          ask: price * 1.05,  // estimate ask as 105% of last price
+          bid: price * 0.95,
+          ask: price * 1.05,
           oi: c.open_interest ?? 0,
-          volume: c.day?.v
+          volume: c.day?.volume ?? 0,
+          iv,
+          greeks: {
+            delta: c.greeks?.delta ?? null,
+            gamma: c.greeks?.gamma ?? null,
+            theta: c.greeks?.theta ?? null,
+            vega: c.greeks?.vega ?? null,
+          },
+          dte: getDTE(c.details?.expiration_date ?? ''),
+        }
+      })
+
+    if (puts.length === 0) {
+      return { symbol: ticker, error: 'No valid puts after filter', stockPrice, passingCandidates: 0, results: [] }
+    }
+
+    const allIVs = puts.map(p => p.iv).filter(Boolean)
+    const atmPut = puts.reduce((best, p) =>
+      Math.abs(p.strike - stockPrice) < Math.abs((best?.strike ?? 0) - stockPrice) ? p : best
+    , puts[0])
+    const currentIV = atmPut?.iv ?? null
+    const ivRank = currentIV && allIVs.length > 5 ? computeIVRank(currentIV, allIVs) : null
+    const ivRVRatio = currentIV && hv20 ? computeIVRVRatio(currentIV, hv20) : null
+    const expectedMove = currentIV
+      ? computeExpectedMove(stockPrice, currentIV, config.targetDTE ?? 3)
+      : stockPrice * 0.02
+
+    const rawSpreads = constructBullPutSpreads(puts, stockPrice, expectedMove, {
+      minDelta: config.minDelta ?? 0.10,
+      maxDelta: config.maxDelta ?? 0.20,
+      minWidth: 1,
+      maxWidth: 5,
+    })
+
+    const relaxedConfig = { ...config, maxBidAsk: 999 }
+
+    const scored = rawSpreads.map(spread => {
+      const { gates, allPass } = runAllGates(spread, stockPrice, ivRank, relaxedConfig)
+      const liq = scoreLiquidity(spread)
+      const econ = scoreSpreadEconomics(spread)
+      const safety = scoreStrikeSafety(spread, ivRVRatio)
+      const volEdge = scoreVolatilityEdge(ivRank, ivRVRatio)
+      const total = computeTotalScore(liq, econ, safety, volEdge)
+      return {
+        ...spread, gates, allPass,
+        scores: { liquidity: liq, economics: econ, strikeSafety: safety, volEdge, total },
+        meta: { stockPrice, ivRank, ivRVRatio, hv20, currentIV, expectedMove },
+      }
+    })
+
+    const passing = scored.filter(s => s.allPass).sort((a, b) => b.scores.total - a.scores.total)
+    const failing = scored.filter(s => !s.allPass).sort((a, b) => b.scores.total - a.scores.total)
+
+    return {
+      symbol: ticker, stockPrice, ivRank,
+      ivRVRatio: ivRVRatio ? parseFloat(ivRVRatio.toFixed(2)) : null,
+      hv20: hv20 ? parseFloat(hv20.toFixed(1)) : null,
+      currentIV,
+      passingCandidates: passing.length,
+      results: [...passing, ...failing].slice(0, 10),
+    }
+  } catch (err) {
+    console.error(`screenSymbol error for ${ticker}:`, err.message)
+    return { symbol: ticker, error: err.message, passingCandidates: 0, results: [] }
+  }
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const { symbols = [], config = {} } = req.body
+  if (!symbols.length) return res.status(400).json({ error: 'symbols array required' })
+
+  const limited = symbols.slice(0, 8)
+  const results = []
+  for (const symbol of limited) {
+    const result = await screenSymbol(symbol.toUpperCase().trim(), config)
+    results.push(result)
+    await new Promise(r => setTimeout(r, 250))
+  }
+
+  const allSpreads = results
+    .flatMap(r => (r.results ?? []).filter(s => s.allPass))
+    .sort((a, b) => b.scores.total - a.scores.total)
+
+  return res.status(200).json({
+    screened: results.length,
+    totalPassingCandidates: allSpreads.length,
+    symbols: results.map(r => ({
+      symbol: r.symbol,
+      stockPrice: r.stockPrice ?? null,
+      ivRank: r.ivRank ?? null,
+      ivRVRatio: r.ivRVRatio ?? null,
+      hv20: r.hv20 ?? null,
+      currentIV: r.currentIV ?? null,
+      passingCandidates: r.passingCandidates ?? 0,
+      error: r.error ?? null,
+    })),
+    spreads: allSpreads.slice(0, 20),
+  })
+}
