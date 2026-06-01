@@ -170,14 +170,21 @@ if (scored.length > 0) {
     const passing = scored.filter(s => s.allPass).sort((a, b) => b.scores.total - a.scores.total)
     const failing = scored.filter(s => !s.allPass).sort((a, b) => b.scores.total - a.scores.total)
 
-    return {
-      symbol: ticker, stockPrice, ivRank,
-      ivRVRatio: ivRVRatio ? parseFloat(ivRVRatio.toFixed(2)) : null,
-      hv20: hv20 ? parseFloat(hv20.toFixed(1)) : null,
-      currentIV,
-      passingCandidates: passing.length,
-      results: [...passing, ...failing].slice(0, 10),
-    }
+   return {
+  symbol: ticker, stockPrice, ivRank,
+  ivRVRatio: ivRVRatio ? parseFloat(ivRVRatio.toFixed(2)) : null,
+  hv20: hv20 ? parseFloat(hv20.toFixed(1)) : null,
+  currentIV,
+  passingCandidates: passing.length,
+  results: [...passing, ...failing].slice(0, 10),
+  debug: {
+    putsFound: puts.length,
+    rawSpreadsConstructed: rawSpreads.length,
+    passing: passing.length,
+    samplePut: puts[0],
+    sampleSpread: scored[0] ?? null,
+  }
+}
   } catch (err) {
     console.error(`screenSymbol error for ${ticker}:`, err.message)
     return { symbol: ticker, error: err.message, passingCandidates: 0, results: [] }
@@ -213,6 +220,7 @@ export default async function handler(req, res) {
       currentIV: r.currentIV ?? null,
       passingCandidates: r.passingCandidates ?? 0,
       error: r.error ?? null,
+      debug: r.debug ?? null,
     })),
     spreads: allSpreads.slice(0, 20),
   })
